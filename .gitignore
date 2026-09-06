@@ -1,0 +1,36 @@
+# deps + build output
+node_modules/
+dist/
+*.log
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# local tooling state
+.vite/
+.opencode/
+
+# ---- raw vendor packs (NOT for git) ----
+# Re-download these from your asset library if you need to re-bake.
+# Everything the game actually loads lives in public/ and IS committed.
+# NOTE: GitHub rejects files > 100 MB (tree_black_alder holds a 140 MB file).
+/EveningSkyHDRI032A_2K/
+/Grass005_2K-JPG/
+/tree_black_alder/
+/tree-01.png
+/tree-02.png
+/bush-01.png
+/grass-01.png
+/grass-02.png
+/generic_sport_coupe_car.glb
+
+# dev-only helper scripts (bake pipeline stays)
+/inspect_*.py
+/measure_*.py
+/check_*.py
+/verify-*.mjs
+/sim-*.mjs

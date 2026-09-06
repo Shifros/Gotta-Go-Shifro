@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Aura Valley — Ultra Realistic Open World Drive</title>
+  <meta name="description" content="Ultra-realistic open-world driving in a 16 km² sunset valley. Three.js." />
+  <link rel="preconnect" href="https://unpkg.com" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.cdnfonts.com/css/aquire" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <canvas id="scene"></canvas>
+    <div id="vignette"></div>
+    <div id="letterbox-top"></div>
+    <div id="letterbox-bottom"></div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loading">
+    <div class="load-inner">
+      <div class="load-eyebrow">THREE.JS &nbsp;•&nbsp; OPEN WORLD &nbsp;•&nbsp; 16 KM²</div>
+      <h1>AURA <span>VALLEY</span></h1>
+      <p class="load-sub">Sunset Valley Drive — ultra detailed</p>
+      <div class="load-bar-wrap"><div id="load-bar"></div></div>
+      <div id="load-text">Shaping valley…</div>
+      <div class="load-hint">W A S D / Arrows to drive &nbsp;•&nbsp; SHIFT boost &nbsp;•&nbsp; SPACE handbrake &nbsp;•&nbsp; C camera &nbsp;•&nbsp; G autosteer</div>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="hud-topleft">
+      <div id="location">HOLLOW LANE — VALLEY LOOP</div>
+      <div id="fps">60 FPS • ULTRA</div>
+    </div>
+
+    <div id="minimap-wrap">
+      <canvas id="minimap" width="220" height="220"></canvas>
+      <div id="minimap-label">VALLEY LOOP • 4.2 KM</div>
+    </div>
+
+    <div id="hud-bottom-left">
+      <div id="odo-value">0.0</div>
+      <div class="hud-label">KILOMETERS</div>
+    </div>
+
+    <div id="hud-bottom-center">
+      <canvas id="steer-preview" width="220" height="70"></canvas>
+      <div id="autosteer-pill"><span class="bracket">[</span><span id="autosteer-text">AUTOSTEER</span><span class="bracket">]</span></div>
+      <div id="gear">D • AUTO</div>
+    </div>
+
+    <div id="hud-bottom-right">
+      <div id="speed-row"><span id="speed-value">0.0</span><span id="lock-icon">◈</span><span id="speed-limit">60</span></div>
+      <div class="hud-label right">KILOMETERS PER HOUR</div>
+      <div id="offroad-warn" class="hidden">OFF ROAD — LOW GRIP</div>
+    </div>
+
+    <div id="hud-bottom-bar">
+      <div class="bar-left">
+        <button data-panel="world" class="bar-btn">WORLD</button>
+        <button data-panel="style" class="bar-btn">STYLE</button>
+        <button data-panel="vehicle" class="bar-btn active">VEHICLE</button>
+      </div>
+      <div class="bar-right">
+        <span id="demo-tag">WEB DEMO</span>
+        <button id="btn-mute" class="icon-btn" title="Sound">♪</button>
+        <button id="btn-cam" class="icon-btn" title="Camera (C)">◉</button>
+        <button id="btn-quality" class="icon-btn" title="Quality">✦</button>
+        <button id="btn-help" class="icon-btn" title="Help">?</button>
+      </div>
+    </div>
+
+    <div id="panel" class="hidden">
+      <div id="panel-world" class="panel-page hidden">
+        <h3>WORLD</h3>
+        <label>Time of day
+          <input id="opt-tod" type="range" min="0" max="1" step="0.01" value="0.55" />
+        </label>
+        <div class="row"><button data-tod="0.15" class="chip">Dawn</button><button data-tod="0.32" class="chip">Sunset</button><button data-tod="0.55" class="chip active">Noon</button><button data-tod="0.88" class="chip">Dusk</button><button data-tod="1.0" class="chip">Night</button></div>
+        <label>Valley mist <input id="opt-fog" type="range" min="0" max="1" step="0.01" value="0.5" /></label>
+        <label>Traffic ghosts <input id="opt-ghost" type="checkbox" checked /></label>
+      </div>
+      <div id="panel-style" class="panel-page hidden">
+        <h3>STYLE</h3>
+        <div class="row"><button data-q="low" class="chip">Efficient</button><button data-q="high" class="chip active">Ultra</button><button data-q="auto" class="chip">Auto</button></div>
+        <label>Exposure <input id="opt-exposure" type="range" min="0.6" max="1.6" step="0.01" value="1.0" /></label>
+        <label>Headlights <input id="opt-lights" type="checkbox" /></label>
+      </div>
+      <div id="panel-vehicle" class="panel-page">
+        <h3>VEHICLE — AURA GT</h3>
+        <div id="stats">
+          <div class="stat" data-stat="topspeed">
+            <div class="stat-head"><span class="stat-label">Top Speed</span><span class="stat-val" id="stat-topspeed-val">0 KM/H</span></div>
+            <div class="stat-bar"><div class="stat-segs"></div><div class="stat-base"></div></div>
+          </div>
+          <div class="stat" data-stat="accel">
+            <div class="stat-head"><span class="stat-label">Acceleration</span><span class="stat-val">12 S 0–100</span></div>
+            <div class="stat-bar"><div class="stat-segs"></div><div class="stat-base"></div></div>
+          </div>
+          <div class="stat" data-stat="brake">
+            <div class="stat-head"><span class="stat-label">Braking</span><span class="stat-val">19 M @ 100</span></div>
+            <div class="stat-bar"><div class="stat-segs"></div><div class="stat-base"></div></div>
+          </div>
+          <div class="stat" data-stat="grip">
+            <div class="stat-head"><span class="stat-label">Grip</span><span class="stat-val">0.92 G</span></div>
+            <div class="stat-bar"><div class="stat-segs"></div><div class="stat-base"></div></div>
+          </div>
+        </div>
+        <div class="row" id="paint-row">
+          <button class="swatch" data-color="#f2f0ec" style="background:#f2f0ec"></button>
+          <button class="swatch active" data-color="#14171e" style="background:#14171e"></button>
+          <button class="swatch" data-color="#7a1e1e" style="background:#7a1e1e"></button>
+          <button class="swatch" data-color="#1e3a5f" style="background:#1e3a5f"></button>
+          <button class="swatch" data-color="#2f4a3a" style="background:#2f4a3a"></button>
+          <button class="swatch" data-color="#c8c9cd" style="background:#c8c9cd"></button>
+        </div>
+        <div class="row"><button id="btn-reset" class="chip">Reset car (R)</button><button id="btn-auto" class="chip">Autosteer (G)</button></div>
+        <p class="muted">Pearl clear-coat • 19" forged rims • LED bar</p>
+      </div>
+    </div>
+
+    <div id="errbar" class="hidden"></div>
+
+    <div id="touch">
+      <div class="t-left"><button id="t-left">◀</button><button id="t-right">▶</button></div>
+      <div class="t-right"><button id="t-gas">▲</button><button id="t-brake">▼</button></div>
+    </div>
+  </div>
+
+  <div id="help" class="hidden">
+    <div class="help-card">
+      <h2>How to drive</h2>
+      <ul>
+        <li><b>W / ↑</b> throttle &nbsp; <b>S / ↓</b> brake / reverse &nbsp; <b>SHIFT</b> boost to 240</li>
+        <li><b>A D / ← →</b> steer &nbsp; <b>SPACE</b> handbrake</li>
+        <li><b>G</b> autosteer (cruise the loop) &nbsp; <b>C</b> camera</li>
+        <li><b>R</b> reset to road &nbsp; <b>H</b> headlights &nbsp; <b>M</b> sound</li>
+        <li>Free roam: leave the road — grass, hills and forests are all drivable.</li>
+      </ul>
+      <button id="help-close">DRIVE ▸</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

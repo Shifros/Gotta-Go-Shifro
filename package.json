@@ -1,0 +1,17 @@
+{
+  "name": "aura-valley-drive",
+  "version": "1.0.0",
+  "description": "Ultra-realistic open-world web car game — Aura Valley. Three.js + Vite.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}
