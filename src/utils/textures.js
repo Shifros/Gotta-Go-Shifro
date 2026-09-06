@@ -308,20 +308,40 @@ export function microBump() {  const c = document.createElement('canvas'); c.wid
   return t;
 }
 
-// Billboard alder atlas: 6 canopy variants in a 3x2 grid, alpha cutout.
+// Billboard alder atlas: 8 canopy variants in a 4x2 grid, alpha cutout.
+// Cells 0-5 broadleaf, 6-7 painted spruces (the photo spruces land there).
 // Bright/detail paint — per-instance green tints do the hue work.
 // (Fallback if model-baked impostors fail; same layout either way.)
 export function alderImpostorTexture() {
-  return makeCanvas(1024, 1024, (ctx, w, h) => {
+  return makeCanvas(2048, 1024, (ctx, w, h) => {
     const rnd = mulberry32(700);
     ctx.clearRect(0, 0, w, h);
     const blob = (x, y, r, style) => {
       ctx.fillStyle = style;
       ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.78, (rnd() - 0.5) * 0.6, 0, 7); ctx.fill();
     };
-    for (let v = 0; v < 6; v++) {
-      const ox = (v % 3) * 512, oy = Math.floor(v / 3) * 512;
+    for (let v = 0; v < 8; v++) {
+      const ox = (v % 4) * 512, oy = Math.floor(v / 4) * 512;
       const cx = ox + 256;
+      if (v >= 6) {
+        // painted spruce: stacked triangular whorls + trunk
+        ctx.fillStyle = '#8a6f52';
+        ctx.fillRect(cx - 10, oy + 430, 20, 70);
+        for (let t = 0; t < 5; t++) {
+          const ty = oy + 430 - t * 72, tw = 150 - t * 22;
+          const g = 70 + rnd() * 40 + t * 12;
+          ctx.fillStyle = `rgba(${g * 0.75 | 0},${g | 0},${g * 0.6 | 0},0.96)`;
+          ctx.beginPath();
+          ctx.moveTo(cx - tw / 2, ty); ctx.lineTo(cx + tw / 2, ty); ctx.lineTo(cx, ty - 84);
+          ctx.closePath(); ctx.fill();
+        }
+        for (let i = 0; i < 160; i++) {
+          const x = cx + (rnd() - 0.5) * 280, y = oy + 120 + rnd() * 330;
+          const g = 110 + rnd() * 70;
+          blob(x, y, 4 + rnd() * 10, `rgba(${g * 0.75 | 0},${g | 0},${g * 0.62 | 0},0.9)`);
+        }
+        continue;
+      }
       // trunk: warm pale (green instance tint pulls it back to bark brown)
       ctx.fillStyle = '#b99878';
       ctx.beginPath();
