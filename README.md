@@ -1,5 +1,8 @@
 # Aura Valley — Ultra Realistic Open World Drive
 
+[![Node](https://img.shields.io/badge/node-%3E%3D18-green)]()
+[![Three.js](https://img.shields.io/badge/three-r160-blue)]()
+
 A high-fidelity, free-roam driving game for the browser. Cruise a 4 km × 4 km
 (16 km²) sunset valley in a detailed GT coupe: winding valley loop, dry-stone
 walls, wind-blown meadows, broadleaf + pine forests, wildflowers, haze, ghost
@@ -23,6 +26,22 @@ Production build:
 npm run build
 npm run preview  # → http://localhost:4173
 ```
+
+## Push to GitHub
+
+```bash
+gh repo create aura-valley-drive --public --source=. --push
+# …or, without the gh CLI:
+git remote add origin https://github.com/<you>/aura-valley-drive.git
+git push -u origin main
+```
+
+Notes:
+- Raw vendor packs (`tree_black_alder/`, `EveningSkyHDRI032A_2K/`,
+  `Grass005_2K-JPG/`, root `*.png`/`*.glb` uploads) are git-ignored —
+  everything the game loads lives in `public/` and is committed.
+- `dist/` is a build artifact (ignored). For Pages hosting, build and
+  deploy `dist/` (`npm run build`).
 
 No build step is strictly required for the source — it is standard Vite + Three.js
 ES modules.
