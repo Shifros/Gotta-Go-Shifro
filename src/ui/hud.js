@@ -1,4 +1,4 @@
-import { roadSamples, roadPointAhead, roadLength } from '../world/road.js';
+import { roadSamples, roadPointAhead, roadPointAheadOn, roadLength, roads } from '../world/road.js';
 
 let els = {};
 let mapOff = null;
@@ -18,6 +18,7 @@ export function initHUD() {
     panel: document.getElementById('panel'),
     gear: document.getElementById('gear'),
     loc: document.getElementById('location'),
+    limit: document.getElementById('speed-limit'),
   };
   // bar buttons → panels
   document.querySelectorAll('.bar-btn').forEach(b => {
@@ -88,19 +89,28 @@ function buildMapCache() {
   mapOff.width = mapOff.height = 220;
   const c = mapOff.getContext('2d');
   c.clearRect(0, 0, 220, 220);
-  c.strokeStyle = 'rgba(255,255,255,0.85)';
-  c.lineWidth = 3;
-  c.shadowColor = 'rgba(255,255,255,0.6)'; c.shadowBlur = 6;
-  c.beginPath();
-  roadSamples.forEach((s, i) => {
-    const x = 110 + (s.x / 2000) * 100;
-    const y = 110 + (s.z / 2000) * 100;
-    if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
-  });
-  c.closePath(); c.stroke();
-  c.shadowBlur = 0;
-  c.strokeStyle = 'rgba(255,180,200,0.25)'; c.lineWidth = 7;
-  c.stroke();
+  const dot2 = (x, z) => [110 + (x / 2000) * 100, 110 + (z / 2000) * 100];
+  const strokeRoad = (samples, closed, style, width, glow) => {
+    if (!samples || !samples.length) return;
+    c.strokeStyle = style;
+    c.lineWidth = width;
+    if (glow) { c.shadowColor = style; c.shadowBlur = 6; }
+    c.beginPath();
+    samples.forEach((s, i) => {
+      const [x, y] = dot2(s.x, s.z);
+      if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+    });
+    if (closed) c.closePath();
+    c.stroke();
+    c.shadowBlur = 0;
+  };
+  if (roads.length) {
+    strokeRoad(roads[0].samples, true, 'rgba(255,255,255,0.85)', 3, true);
+    strokeRoad(roads[1].samples, false, 'rgba(255,176,60,0.9)', 2.5, true);
+    strokeRoad(roads[2].samples, true, 'rgba(255,255,255,0.55)', 1.5, false);
+  } else {
+    strokeRoad(roadSamples, true, 'rgba(255,255,255,0.85)', 3, true);
+  }
 }
 
 export function drawMinimap(car, ghosts) {
@@ -134,7 +144,7 @@ export function drawSteerPreview(car, closest) {
   c.clearRect(0, 0, 220, 70);
   const pts = [];
   for (let d = 4; d <= 64; d += 6) {
-    const s = roadPointAhead(closest.index, d).point;
+    const s = (closest.road ? roadPointAheadOn(closest.road, closest.index, d) : roadPointAhead(closest.index, d)).point;
     const dx = s.x - car.pos.x, dz = s.z - car.pos.z;
     // car space: forward = +y on canvas
     const ch = car.heading;
@@ -156,6 +166,8 @@ export function updateHUD(car, info, dt, qualityLabel) {
   if (!els.speed) return;
   els.speed.textContent = info.speedKmh.toFixed(1);
   els.odo.textContent = car.odometer.toFixed(1);
+  // cruise readout: your remembered pace in autosteer, road cap otherwise
+  if (els.limit) els.limit.textContent = car.autosteer ? Math.round(car.cruise * 3.6) : 60;
   const on = car.autosteer;
   els.autoPill.classList.toggle('off', !on);
   els.autoText.textContent = on ? 'AUTOSTEER' : 'MANUAL';

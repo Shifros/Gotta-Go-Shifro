@@ -3,6 +3,7 @@ import { initRoadLayout, buildRoad } from './world/road.js';
 import { buildTerrain } from './world/terrain.js';
 import { buildEnvironment, applyTimeOfDay, setMist, updateSunFollow, tickSky, refreshEnvironment } from './world/environment.js';
 import { buildVegetation, buildHeroAlders, loadTreeGLB, makeAlderMaterials, tickVegetation } from './world/vegetation.js';
+import { buildProps, tickProps } from './world/props.js';
 import { bakeImpostorAtlas, buildBushAtlas, buildGrassAtlas } from './world/impostors.js';
 import { alderImpostorTexture } from './utils/textures.js';
 import { loadGroundTextures } from './world/realMaterials.js';
@@ -18,8 +19,8 @@ function progress(p, msg) {
 }
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 
-let renderer, scene, camera, car, rig, quality = 'high', qualityLabel = 'ULTRA • R57';
-const BUILD_TAG = 'R57';
+let renderer, scene, camera, car, rig, quality = 'high', qualityLabel = 'ULTRA • R62';
+const BUILD_TAG = 'R62';
 let exposure = 1.0, autoQuality = false;
 
 async function boot() {
@@ -70,6 +71,9 @@ async function boot() {
   progress(0.58, 'Paving Hollow Lane…');
   await nextFrame();
   buildRoad(scene);
+  progress(0.62, 'Raising ramps and homesteads…');
+  await nextFrame();
+  buildProps(scene);
 
   progress(0.72, 'Planting forests & meadows…');
   await nextFrame();
@@ -194,6 +198,7 @@ function loop(now) {
     const info = car.update(dt, elapsed);
     tickSky(dt, elapsed);
     tickVegetation(elapsed);
+    tickProps(elapsed);
     updateSunFollow(car.pos);
 
     const fps = updateHUD(car, info, dt, autoQuality ? `AUTO • ${qualityLabel}` : qualityLabel);
