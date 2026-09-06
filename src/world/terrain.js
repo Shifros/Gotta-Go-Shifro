@@ -6,54 +6,63 @@ export const WORLD_SIZE = 4000;
 export const ROAD_WIDTH = 7.5;
 
 // Road samples injected by road module for terrain flattening.
-let roadSamples = []; // {x,z,y}
+// Multiple networks: loop + highway + lanes. Samples carry halfW.
+let roadNetworks = []; // array of arrays {x,z,y,halfW}
 
 // Spatial hash so per-vertex road queries are O(1).
 const CELL = 40;
 const grid = new Map();
 const gk = (gx, gz) => gx + ':' + gz;
 
-export function setRoadSamples(samples) {
-  roadSamples = samples;
+export function setRoadSamples(samples, net = 0) {
+  roadNetworks[net] = samples;
   grid.clear();
-  for (let i = 0; i < samples.length; i++) {
-    const s = samples[i];
-    const key = gk(Math.floor(s.x / CELL), Math.floor(s.z / CELL));
-    let a = grid.get(key);
-    if (!a) { a = []; grid.set(key, a); }
-    a.push(i);
-  }
+  roadNetworks.forEach((arr) => {
+    if (!arr) return;
+    for (let i = 0; i < arr.length; i++) {
+      const s = arr[i];
+      const key = gk(Math.floor(s.x / CELL), Math.floor(s.z / CELL));
+      let a = grid.get(key);
+      if (!a) { a = []; grid.set(key, a); }
+      a.push(s);
+    }
+  });
 }
 
 // Fast corridor query: segment-interpolated road height (no steps/bumps).
 function queryRoad(x, z) {
-  if (!roadSamples.length || grid.size === 0) return null;
+  if (!roadNetworks.length || grid.size === 0) return null;
   const gx = Math.floor(x / CELL), gz = Math.floor(z / CELL);
-  let bi = -1, bd = 1e18;
+  let bs = null, bd = 1e18, bn = null;
   for (let ix = gx - 1; ix <= gx + 1; ix++) {
     for (let iz = gz - 1; iz <= gz + 1; iz++) {
       const a = grid.get(gk(ix, iz));
       if (!a) continue;
       for (let k = 0; k < a.length; k++) {
-        const s = roadSamples[a[k]];
+        const s = a[k];
         const dx = x - s.x, dz = z - s.z;
         const d = dx * dx + dz * dz;
-        if (d < bd) { bd = d; bi = a[k]; }
+        if (d < bd) { bd = d; bs = s; }
       }
     }
   }
-  if (bi < 0) return null;
+  if (!bs) return null;
   if (Math.sqrt(bd) > 64) return null;
-  return interpRoad(x, z, bi, bd);
+  return interpRoad(x, z, bs, bd);
 }
 
-// Project onto the two segments around sample bi, lerp height — C0 smooth.
-function interpRoad(x, z, bi, bd) {
-  const n = roadSamples.length;
-  let bestD = bd, bestY = roadSamples[bi].y;
-  const segs = [[(bi - 1 + n) % n, bi], [bi, (bi + 1) % n]];
+// Project onto nearby segments of the sample's own network, lerp height.
+function interpRoad(x, z, bs, bd) {
+  const arr = bs._arr;
+  const bi = bs._i;
+  const n = arr.length;
+  const wrap = bs._wrap;
+  let bestD = bd, bestY = bs.y;
+  const segs = wrap
+    ? [[(bi - 1 + n) % n, bi], [bi, (bi + 1) % n]]
+    : [[Math.max(0, bi - 1), bi], [bi, Math.min(n - 1, bi + 1)]];
   for (let k = 0; k < 2; k++) {
-    const A = roadSamples[segs[k][0]], B = roadSamples[segs[k][1]];
+    const A = arr[segs[k][0]], B = arr[segs[k][1]];
     const abx = B.x - A.x, abz = B.z - A.z;
     const len2 = abx * abx + abz * abz || 1;
     let t = ((x - A.x) * abx + (z - A.z) * abz) / len2;
@@ -63,7 +72,7 @@ function interpRoad(x, z, bi, bd) {
     const d = dx * dx + dz * dz;
     if (d < bestD) { bestD = d; bestY = A.y + (B.y - A.y) * t; }
   }
-  return { d: Math.sqrt(bestD), y: bestY };
+  return { d: Math.sqrt(bestD), y: bestY, halfW: bs.halfW || 3.75 };
 }
 
 // Base rolling terrain — must be pure function of x,z.
@@ -84,23 +93,27 @@ export function baseHeight(x, z) {
 
 // Coarse distance (used for scattering; stride keeps init fast).
 export function distToRoad(x, z) {
-  if (!roadSamples.length) return 1e9;
+  if (!roadNetworks.length) return 1e9;
   let best = 1e9;
-  for (let i = 0; i < roadSamples.length; i += 3) {
-    const s = roadSamples[i];
-    const dx = x - s.x, dz = z - s.z;
-    const d = dx * dx + dz * dz;
-    if (d < best) best = d;
-  }
+  roadNetworks.forEach((arr) => {
+    if (!arr) return;
+    for (let i = 0; i < arr.length; i += 3) {
+      const s = arr[i];
+      const dx = x - s.x, dz = z - s.z;
+      const d = dx * dx + dz * dz;
+      if (d < best) best = d;
+    }
+  });
   return Math.sqrt(best);
 }
 
 export function getHeight(x, z) {
   const b = baseHeight(x, z);
   const q = queryRoad(x, z);
-  if (!q || q.d > 26) return b;
+  if (!q || q.d > q.halfW + 22) return b;
   // Wide fully-flat ribbon so the 10 m terrain grid always captures the road.
-  const t = smoothstep(7.5, 24, q.d);
+  const flat = q.halfW + 3.75;
+  const t = smoothstep(flat, flat + 16.5, q.d);
   const blend = t * t * (3 - 2 * t);
   return q.y * (1 - blend) + b * blend;
 }
@@ -118,7 +131,7 @@ export function getHeightAndNormal(x, z, out) {
 export function isOffRoad(x, z) {
   const q = queryRoad(x, z);
   if (!q) return true;
-  return q.d > ROAD_WIDTH * 0.62;
+  return q.d > q.halfW + 0.9;
 }
 
 let terrainMesh = null;
