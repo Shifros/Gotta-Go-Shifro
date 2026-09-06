@@ -18,8 +18,8 @@ function progress(p, msg) {
 }
 const nextFrame = () => new Promise(r => requestAnimationFrame(r));
 
-let renderer, scene, camera, car, rig, quality = 'high', qualityLabel = 'ULTRA • R56';
-const BUILD_TAG = 'R56';
+let renderer, scene, camera, car, rig, quality = 'high', qualityLabel = 'ULTRA • R57';
+const BUILD_TAG = 'R57';
 let exposure = 1.0, autoQuality = false;
 
 async function boot() {
@@ -87,13 +87,15 @@ async function boot() {
   try {
     const base = import.meta.env.BASE_URL || '/';
     const texLoader = new THREE.TextureLoader();
-    const [gC, gA, gB, gD, ph1, ph2, bushPh, gr1Ph, gr2Ph] = await Promise.all([
+    const [gC, gA, gB, gD, ph1, ph2, sp1, sp2, bushPh, gr1Ph, gr2Ph] = await Promise.all([
       loadTreeGLB('trees/alder_lod1.glb'),
       loadTreeGLB('trees/alder_lod1_a.glb'),
       loadTreeGLB('trees/alder_lod1_b.glb'),
       loadTreeGLB('trees/alder_lod1_d.glb'),
       texLoader.loadAsync(base + 'trees/tree-01.png').catch(() => null),
       texLoader.loadAsync(base + 'trees/tree-02.png').catch(() => null),
+      texLoader.loadAsync(base + 'trees/out-tree-01.png').catch(() => null),
+      texLoader.loadAsync(base + 'trees/out-tree-02.png').catch(() => null),
       texLoader.loadAsync(base + 'ground/bush-01.png').catch(() => null),
       texLoader.loadAsync(base + 'ground/grass-01.png').catch(() => null),
       texLoader.loadAsync(base + 'ground/grass-02.png').catch(() => null),
@@ -108,11 +110,15 @@ async function boot() {
         [
           { img: ph1 ? ph1.image : null, bg: 'black' },
           { img: ph2 ? ph2.image : null, bg: 'white' },
+          { img: sp1 ? sp1.image : null, flood: 'white' },
+          { img: sp2 ? sp2.image : null, flood: 'black' },
         ]
       );
     } catch (err) { console.warn('model impostors failed, painted fallback:', err); }
     if (ph1) ph1.dispose();
     if (ph2) ph2.dispose();
+    if (sp1) sp1.dispose();
+    if (sp2) sp2.dispose();
     // Photo groundcover atlases (skipped silently if photos are missing).
     let bushTex = null, grassTex = null;
     try {

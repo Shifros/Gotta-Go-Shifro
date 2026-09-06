@@ -471,19 +471,21 @@ function buildForestCarpet(scene, isHigh, bushGLB) {
   scene.add(wood, leaf);
 }
 
-// Variant pool: photographed trees (cells 4-5) weighted ~48% for presence,
-// baked USD renders (cells 0-3) fill the rest.
+// Variant pool: cells 0-3 USD renders, 4-5 photo alders, 6-7 photo spruces.
+// Spruces weighted ~30% (≈10k of the grove forest).
 function pickVariant(rnd) {
   const r = rnd();
-  if (r < 0.24) return 4;
-  if (r < 0.48) return 5;
+  if (r < 0.15) return 6;
+  if (r < 0.30) return 7;
+  if (r < 0.40) return 4;
+  if (r < 0.50) return 5;
   return (rnd() * 4) | 0;
 }
 
 // Thousands of camera-facing alder billboards in randomized groves.
 // One InstancedMesh, one draw call, ~2 tris each — real sun + fog response.
 function buildImpostorForest(scene, isHigh, forestSpots, atlasTex) {
-  const target = isHigh ? 27000 : 12000;
+  const target = isHigh ? 34000 : 15000;
   const rnd = mulberry32(909);
   const spots = [];
   const clusters = 60;
@@ -537,7 +539,7 @@ function buildImpostorForest(scene, isHigh, forestSpots, atlasTex) {
     sh.vertexShader = ('uniform float uTime;\nattribute float aVariant;\nattribute float aPhase;\n') +
       sh.vertexShader
         .replace('#include <uv_vertex>', `#include <uv_vertex>
-          vMapUv = vec2(uv.x / 3.0 + mod(aVariant, 3.0) / 3.0, uv.y * 0.5 + (1.0 - floor(aVariant / 3.0)) * 0.5);`)
+          vMapUv = vec2(uv.x / 4.0 + mod(aVariant, 4.0) / 4.0, uv.y * 0.5 + (1.0 - floor(aVariant / 4.0)) * 0.5);`)
         .replace('#include <defaultnormal_vertex>', `
           vec4 impC = instanceMatrix * vec4(0., 0., 0., 1.);
           vec3 impLook = cameraPosition - impC.xyz; impLook.y = 0.0;

@@ -2,10 +2,9 @@ import * as THREE from 'three';
 import { alderImpostorTexture } from '../utils/textures.js';
 
 // Renders the real baked tree models offscreen into atlas cells 0-3,
-// then composites the photographed trees (tree-01/02.png) into cells 4-5.
-// Same engine, same materials, same lights — billboards match the 3D forest.
-// Missing photos are backfilled with painted cells, so variants 4-5 are
-// always safe to instance.
+// composites the photographed alders into cells 4-5 and the spruces
+// (flood-cut) into cells 6-7. Same engine, same materials, same lights —
+// billboards match the 3D forest. Missing photos backfill painted.
 export async function bakeImpostorAtlas(renderer, variants, mats, photos = [], cell = 512) {
   const rt = new THREE.WebGLRenderTarget(cell, cell, { samples: 4 });
   const scene = new THREE.Scene();
@@ -23,14 +22,16 @@ export async function bakeImpostorAtlas(renderer, variants, mats, photos = [], c
   group.add(woodMesh, leafMesh);
   scene.add(group);
 
+  const COLS = 4;
   const atlas = document.createElement('canvas');
-  atlas.width = cell * 3;
+  atlas.width = cell * COLS;
   atlas.height = cell * 2;
   const ctx = atlas.getContext('2d');
   const px = new Uint8Array(cell * cell * 4);
   const tmp = document.createElement('canvas');
   tmp.width = tmp.height = cell;
   const tctx = tmp.getContext('2d');
+  const cellXY = (ci) => [(ci % COLS) * cell, Math.floor(ci / COLS) * cell];
 
   const prevTarget = renderer.getRenderTarget();
   const prevClear = new THREE.Color();
@@ -49,7 +50,7 @@ export async function bakeImpostorAtlas(renderer, variants, mats, photos = [], c
       img.data.set(px);
       tctx.putImageData(img, 0, 0);
       // GL pixels are bottom-up; atlas cells are top-down.
-      const cx = (v % 3) * cell, cy = Math.floor(v / 3) * cell;
+      const [cx, cy] = cellXY(v);
       ctx.save();
       ctx.translate(cx, cy + cell);
       ctx.scale(1, -1);
@@ -62,18 +63,25 @@ export async function bakeImpostorAtlas(renderer, variants, mats, photos = [], c
     rt.dispose();
   }
 
-  // Photo cells 4-5 (or painted backfill when a photo is missing).
+  // Photo cells 4-7 (or painted backfill when a photo is missing).
   const fallback = alderImpostorTexture();
   const fc = fallback.image;
   const wanted = [
     { img: photos[0] && photos[0].img, bg: 'black' },
     { img: photos[1] && photos[1].img, bg: 'white' },
+    { img: photos[2] && photos[2].img, flood: 'white' },
+    { img: photos[3] && photos[3].img, flood: 'black' },
   ];
   wanted.forEach((w, k) => {
     const cellIndex = 4 + k;
-    const cx = (cellIndex % 3) * cell, cy = Math.floor(cellIndex / 3) * cell;
-    if (w.img) compositePhoto(ctx, cx, cy, cell, w.img, w.bg);
-    else ctx.drawImage(fc, (cellIndex % 3) * 512, Math.floor(cellIndex / 3) * 512, 512, 512, cx, cy, cell, cell);
+    const [cx, cy] = cellXY(cellIndex);
+    if (w.img && w.flood) {
+      const cut = floodCutout(w.img, w.flood);
+      if (cut) blitCell(ctx, cx, cy, cell, cut, {});
+      else ctx.drawImage(fc, 0, 0, 512, 512, cx, cy, cell, cell);
+    }
+    else if (w.img) compositePhoto(ctx, cx, cy, cell, w.img, w.bg);
+    else ctx.drawImage(fc, 0, 0, 512, 512, cx, cy, cell, cell);
   });
 
   const tex = new THREE.CanvasTexture(atlas);
@@ -141,6 +149,89 @@ function compositePhoto(ctx, cx, cy, cell, img, bg) {
 }
 
 // ---- Groundcover pipeline (bush + grass photos) ----
+
+// Flood-fill background removal: BFS from the borders through
+// backdrop-colored pixels. Kills isolated noise specks that luma
+// thresholding would leave floating, and handles JPEG-fringed edges.
+export function floodCutout(img, bg) {
+  const sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
+  const work = document.createElement('canvas');
+  work.width = sw; work.height = sh;
+  const wctx = work.getContext('2d', { willReadFrequently: true });
+  wctx.drawImage(img, 0, 0);
+  const data = wctx.getImageData(0, 0, sw, sh);
+  const d = data.data;
+  const bgness = (i) => bg === 'black'
+    ? Math.max(d[i], d[i + 1], d[i + 2])
+    : 255 - Math.min(d[i], d[i + 1], d[i + 2]);
+  const isBg = (x, y) => {
+    if (x < 0 || y < 0 || x >= sw || y >= sh) return false;
+    const i = (y * sw + x) * 4;
+    return bgness(i) < 26;
+  };
+  const mask = new Uint8Array(sw * sh); // 1 = backdrop
+  const stack = [];
+  for (let x = 0; x < sw; x++) {
+    if (isBg(x, 0)) { mask[x] = 1; stack.push(x); }
+    if (isBg(x, sh - 1)) { mask[(sh - 1) * sw + x] = 1; stack.push((sh - 1) * sw + x); }
+  }
+  for (let y = 0; y < sh; y++) {
+    if (isBg(0, y)) { mask[y * sw] = 1; stack.push(y * sw); }
+    if (isBg(sw - 1, y)) { mask[y * sw + sw - 1] = 1; stack.push(y * sw + sw - 1); }
+  }
+  while (stack.length) {
+    const p = stack.pop();
+    const x = p % sw, y = (p / sw) | 0;
+    const nb = [p - 1, p + 1, p - sw, p + sw];
+    const nxy = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
+    for (let k = 0; k < 4; k++) {
+      const q = nb[k];
+      if (nxy[k][0] < 0 || nxy[k][1] < 0 || nxy[k][0] >= sw || nxy[k][1] >= sh) continue;
+      if (!mask[q] && isBg(nxy[k][0], nxy[k][1])) { mask[q] = 1; stack.push(q); }
+    }
+  }
+  let x0 = sw, y0 = sh, x1 = 0, y1 = 0;
+  const rim = new Uint8Array(sw * sh); // content pixels touching backdrop
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+    const p = y * sw + x, i = p * 4;
+    if (mask[p]) { d[i + 3] = 0; continue; }
+    if (x > 0 && mask[p - 1] || x < sw - 1 && mask[p + 1] || y > 0 && mask[p - sw] || y < sh - 1 && mask[p + sw]) {
+      rim[p] = 1;
+    }
+    if (x < x0) x0 = x; if (x > x1) x1 = x;
+    if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  // un-premultiply rim fringe against the known backdrop color
+  for (let y = 0; y < sh; y++) for (let x = 0; x < sw; x++) {
+    const p = y * sw + x;
+    if (!rim[p]) continue;
+    const i = p * 4;
+    const a = bg === 'black'
+      ? Math.max(0, Math.min(1, (Math.max(d[i], d[i + 1], d[i + 2]) - 6) / 40))
+      : Math.max(0, Math.min(1, ((255 - Math.min(d[i], d[i + 1], d[i + 2])) - 6) / 40));
+    const inv = 1 - a;
+    let nr = d[i], ng = d[i + 1], nb2 = d[i + 2];
+    if (bg === 'black') { nr = d[i] / Math.max(a, 1e-3); ng = d[i + 1] / Math.max(a, 1e-3); nb2 = d[i + 2] / Math.max(a, 1e-3); }
+    else {
+      nr = (d[i] - inv * 255) / Math.max(a, 1e-3);
+      ng = (d[i + 1] - inv * 255) / Math.max(a, 1e-3);
+      nb2 = (d[i + 2] - inv * 255) / Math.max(a, 1e-3);
+    }
+    d[i] = Math.max(0, Math.min(255, nr));
+    d[i + 1] = Math.max(0, Math.min(255, ng));
+    d[i + 2] = Math.max(0, Math.min(255, nb2));
+    d[i + 3] = Math.round(a * 255);
+  }
+  wctx.putImageData(data, 0, 0);
+  if (x1 <= x0 || y1 <= y0) return null;
+  const pad = 6;
+  x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad);
+  x1 = Math.min(sw - 1, x1 + pad); y1 = Math.min(sh - 1, y1 + pad);
+  const out = document.createElement('canvas');
+  out.width = x1 - x0; out.height = y1 - y0;
+  out.getContext('2d').drawImage(work, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+  return out;
+}
 
 // Luma-key cutout → tightly cropped canvas (sRGB bytes, halo-corrected).
 export function keyCutout(img, bg) {
