@@ -562,8 +562,12 @@ const COUPE_YAW = 0;
   // Hubs: track on X, wheelbase on Z. (±0.84, ±1.4 on this car — the
   // design's own tire coordinates. Transposing these parks wheels
   // outboard of the body, which is exactly the freakshow we just saw.)
-  const hubFor = (qx, qz) => new THREE.Vector3(
-    carC.x + qx * (carWid / 2 - 0.22), wheelR + carMinY, carC.z + qz * 0.31 * carLen);
+  // Staggered tuck: fronts sit deeper inside the arches, rears near-flush.
+  const hubFor = (qx, qz) => {
+    const inset = qz > 0 ? 0.32 : 0.29;
+    return new THREE.Vector3(
+      carC.x + qx * (carWid / 2 - inset), wheelR + carMinY, carC.z + qz * 0.31 * carLen);
+  };
   const carAxle = (box.max.x - box.min.x) <= (box.max.z - box.min.z) ? 'x' : 'z';
   const wheelLog = [];
   // Pair-split by HALVES: volume-sorted pile is [tires…, rims…], so each
@@ -625,6 +629,12 @@ const COUPE_YAW = 0;
     wheelLog.push(`${key}@${H.toArray().map((v) => +v.toFixed(2)).join(',')}x${claimed.length}/${carAxle}/res=${res.toFixed(2)}`);
   });
   console.info('[coupe] wheels:', wheelLog.join(' '), 'r=', +wheelR.toFixed(3), 'pile=', pile.length);
+
+  // stance: drop the shell over the wheels to close the arch gap. Claimed
+  // wheels are already parented to their hub groups, so only the shell
+  // moves — tire contact patches stay glued to y = 0.
+  const BODY_DROP = 0.08;
+  model.position.y -= BODY_DROP;
 
   // Contact shadows sized to the measured car (kept tight: blob + shadow
   // stacking reads as one black slab otherwise).

@@ -59,10 +59,46 @@ export class CarController {
     this.crashed = 0;
 
     this.input = { up: false, down: false, left: false, right: false, handbrake: false, boost: false };
+    // rear-pivot rendering: shift every direct child +WB2 so the group origin
+    // sits on the rear axle. Physics already integrates the rear axle and
+    // derives the center, so pivoting the mesh at the rear keeps the tail
+    // planted while the nose visibly carves into the steering. World
+    // positions are unchanged — only the rotation pivot moves.
+    this.WB2 = 1.42;
+    this.rig.group.children.forEach((c) => { c.position.z += this.WB2; });
     this.camPos = new THREE.Vector3();
     this.camLook = new THREE.Vector3();
     this.camInit = false;
     this.fov = 62;
+
+    // cursor free-look: normalized look target (-1..1) + smoothed value.
+    // Hover (unlocked): cursor position steers a peek offset.
+    // Locked (pointer-lock, cursor hidden): mouse deltas steer freely.
+    // Touch devices drive this via canvas drag.
+    // +heading = screen-left, so screen-right look needs negative yaw.
+    this.lookX = 0;
+    this.lookY = 0;
+    this.sLookX = 0;
+    this.sLookY = 0;
+    this.lookOn = true;
+    this.lookStrength = 1.0;
+    this.onLookToggle = null;
+    this.onLockChange = null;
+    // hidden-cursor free look + idle auto-recenter
+    this.locked = false;
+    this.lastLookMove = performance.now();
+    this.lookIdleTimeout = 3.0; // secs of no mouse move before auto-center
+    this.lookAutoReturn = true;
+    this.lookReturnRate = 1.8; // smoothing speed of the snap-back
+    this.lookRunThreshold = 2.0; // m/s — only auto-center while driving
+    this.invertLookX = false;
+    this.invertLookY = false;
+    this.lockSensitivity = 0.0026;
+    // steering lean: camera peeks into the turn, speed-gated for depth
+    // this.steer is screen-relative (LEFT = +1), same sign as +heading
+    this.camLean = 0;
+    this.leanOn = true;
+    this.leanStrength = 1.0;
 
     // velocity streaks: rushing air past 140 km/h (1 draw call, 120 quads)
     const streakGeo = new THREE.BoxGeometry(0.025, 0.025, 1);
@@ -108,8 +144,82 @@ export class CarController {
       if (e.code === 'KeyR') this.resetToRoad();
       if (e.code === 'KeyH') this.toggleLights?.();
       if (e.code === 'KeyM') this.toggleMute();
+      if (e.code === 'KeyV') this.setLookEnabled(!this.lookOn);
     });
     window.addEventListener('keyup', (e) => set(e.code, false));
+
+    // cursor free-look:
+    // - unlocked desktop: hover position steers a peek offset.
+    // - locked (pointer-lock, cursor hidden): movement deltas steer freely.
+    // - touch / pen: canvas drag steers, idle logic recenters while driving.
+    const canvas = document.getElementById('scene');
+    const touchLook = (dx, dy) => {
+      this.lookX = clamp(this.lookX + dx * 3.2, -1, 1);
+      this.lookY = clamp(this.lookY + dy * 3.2, -1, 1);
+      this.lastLookMove = performance.now();
+    };
+    const setLookFromScreen = (cx, cy) => {
+      this.lookX = clamp((cx / window.innerWidth) * 2 - 1, -1, 1);
+      this.lookY = clamp((cy / window.innerHeight) * 2 - 1, -1, 1);
+      this.lastLookMove = performance.now();
+    };
+    window.addEventListener('mousemove', (e) => {
+      if (this.locked) {
+        // free movement, no screen edges: hidden cursor
+        const mx = e.movementX || 0, my = e.movementY || 0;
+        if (mx !== 0 || my !== 0) {
+          this.lookX = clamp(this.lookX + mx * this.lockSensitivity, -1, 1);
+          this.lookY = clamp(this.lookY + my * this.lockSensitivity, -1, 1);
+          this.lastLookMove = performance.now();
+        }
+        return;
+      }
+      // adjusting panels / HUD shouldn't swing the view
+      const t = e.target;
+      if (t && t.closest && t.closest('#panel, #hud-bottom-bar, #help, #minimap-wrap')) return;
+      setLookFromScreen(e.clientX, e.clientY);
+    });
+    document.addEventListener('mouseleave', () => {
+      if (!this.locked) { this.lookX = 0; this.lookY = 0; }
+    });
+    // click the 3D view → hide cursor + free look. ESC exits (browser).
+    canvas?.addEventListener('click', () => {
+      if (!this.lookOn || this.locked) return;
+      // don't steal clicks meant for HUD (canvas has no HUD children, safe)
+      this.requestLookLock();
+    });
+    document.addEventListener('pointerlockchange', () => {
+      const el = document.pointerLockElement;
+      const isOurs = el === canvas;
+      this.locked = !!isOurs;
+      canvas?.classList.toggle('locked', this.locked);
+      document.body.classList.toggle('look-locked', this.locked);
+      if (this.locked) this.lastLookMove = performance.now();
+      this.onLockChange?.(this.locked);
+    });
+    document.addEventListener('pointerlockerror', () => {
+      this.locked = false;
+      this.onLockChange?.(false);
+    });
+    // drag-to-look for touch / pen (canvas only, so HUD buttons keep working)
+    let dragId = null, dragX = 0, dragY = 0;
+    canvas?.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse') { dragId = e.pointerId; dragX = e.clientX; dragY = e.clientY; }
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== dragId) return;
+      const dx = (e.clientX - dragX) / window.innerWidth;
+      const dy = (e.clientY - dragY) / window.innerHeight;
+      dragX = e.clientX; dragY = e.clientY;
+      touchLook(dx, dy);
+    });
+    const endDrag = (e) => {
+      // don't snap instantly — let the idle auto-return glide it back
+      // while driving, or hold the angle while parked for inspection
+      if (e.pointerId === dragId) { dragId = null; this.lastLookMove = performance.now(); }
+    };
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
 
     // touch
     const hold = (id, key) => {
@@ -206,6 +316,65 @@ export class CarController {
     return this.autosteer;
   }
   cycleCamera() { this.camMode = (this.camMode + 1) % 3; return this.camMode; }
+  setLookEnabled(on) {
+    this.lookOn = !!on;
+    if (!this.lookOn) {
+      this.lookX = 0; this.lookY = 0; this.sLookX = 0; this.sLookY = 0;
+      this.exitLookLock();
+    }
+    this.onLookToggle?.(this.lookOn);
+    return this.lookOn;
+  }
+  setLookStrength(v) {
+    this.lookStrength = clamp(Number(v) || 0, 0, 1.5);
+    return this.lookStrength;
+  }
+  setLookAutoReturn(on) { this.lookAutoReturn = !!on; return this.lookAutoReturn; }
+  setLookIdleTimeout(s) {
+    this.lookIdleTimeout = clamp(Number(s) || 0, 0.5, 10);
+    return this.lookIdleTimeout;
+  }
+  setInvertLookX(on) { this.invertLookX = !!on; return this.invertLookX; }
+  setInvertLookY(on) { this.invertLookY = !!on; return this.invertLookY; }
+  setLeanEnabled(on) {
+    this.leanOn = !!on;
+    if (!this.leanOn) this.camLean = 0;
+    return this.leanOn;
+  }
+  setLeanStrength(v) {
+    this.leanStrength = clamp(Number(v) || 0, 0, 2);
+    return this.leanStrength;
+  }
+  recenterLook() {
+    this.lookX = 0; this.lookY = 0;
+    this.lastLookMove = performance.now();
+  }
+  requestLookLock() {
+    if (!this.lookOn || this.locked) return false;
+    const canvas = document.getElementById('scene');
+    if (!canvas) return false;
+    try {
+      const p = canvas.requestPointerLock?.({ unadjustedMovement: true });
+      if (p && p.catch) p.catch(() => { try { canvas.requestPointerLock(); } catch { /* ignore */ } });
+      else if (!p) canvas.requestPointerLock();
+      return true;
+    } catch {
+      try { canvas.requestPointerLock(); return true; } catch { return false; }
+    }
+  }
+  exitLookLock() {
+    try {
+      if (document.pointerLockElement) document.exitPointerLock();
+    } catch { /* ignore */ }
+    this.locked = false;
+    document.getElementById('scene')?.classList.remove('locked');
+    document.body.classList.remove('look-locked');
+    return true;
+  }
+  toggleLookLock() {
+    if (this.locked) { this.exitLookLock(); return false; }
+    return this.requestLookLock();
+  }
 
   resetToRoad() {
     const c = closestOnRoad(this.pos.x, this.pos.z);
@@ -430,7 +599,8 @@ export class CarController {
       this.y = damp(this.y, groundY, 20, dt);
     }
     const rig = this.rig;
-    rig.group.position.set(this.pos.x, this.y, this.pos.z);
+    // render pivoted at the rear axle: tail stays planted, nose swings in
+    rig.group.position.set(this.rear.x, this.y, this.rear.z);
     rig.group.rotation.y = this.heading;
 
     const bumpy = offroad ? Math.min(1, spd / 14) : 0;
@@ -451,11 +621,28 @@ export class CarController {
       const w = rig.wheels[kw];
       if (w && w.spin) w.spin.rotation[w.axis || 'x'] += spin;
     });
-    rig.wheels.FL.steer.rotation.y = this.steerAngle;
-    rig.wheels.FR.steer.rotation.y = this.steerAngle;
+    // exaggerated front-axle visual: true lock shrinks with speed (only ~5°
+    // at 140 km/h), so scale it back up for readability. Physics (steerAngle)
+    // is untouched — this is display only, and the rear wheels stay straight.
+    const visMax = Math.min(0.55, Math.abs(maxSteer) * 1.65 + 0.02);
+    const visSteer = this.steer * visMax;
+    rig.wheels.FL.steer.rotation.y = visSteer;
+    rig.wheels.FR.steer.rotation.y = visSteer;
     const braking = brake > 0 && this.speed > 1;
     rig.brakeMat.emissiveIntensity = braking ? 3.4 : autoActive ? 1.6 : 1.1;
     rig.setReverse?.(this.speed < -0.5);
+
+    // idle auto-recenter: only while driving — parked cars hold the angle
+    // so you can walk around the view and inspect details.
+    if (this.lookOn && this.lookAutoReturn && (this.lookX !== 0 || this.lookY !== 0)) {
+      const idleSec = (performance.now() - this.lastLookMove) / 1000;
+      if (idleSec > this.lookIdleTimeout && Math.abs(this.speed) > this.lookRunThreshold) {
+        this.lookX = damp(this.lookX, 0, this.lookReturnRate, dt);
+        this.lookY = damp(this.lookY, 0, this.lookReturnRate, dt);
+        if (Math.abs(this.lookX) < 0.005) this.lookX = 0;
+        if (Math.abs(this.lookY) < 0.005) this.lookY = 0;
+      }
+    }
 
     this.updateCamera(dt, elapsed, offroad);
     this.updateStreaks(dt, Math.abs(this.speed) * 3.6);
@@ -467,23 +654,70 @@ export class CarController {
 
   updateCamera(dt, elapsed, offroad) {
     const cam = this.camera;
+    // smooth the cursor so the view glides instead of snapping
+    const lxT = this.lookOn ? this.lookX : 0;
+    const lyT = this.lookOn ? this.lookY : 0;
+    this.sLookX = damp(this.sLookX, lxT, 7, dt);
+    this.sLookY = damp(this.sLookY, lyT, 7, dt);
+    if (Math.abs(this.sLookX) < 0.002) this.sLookX = 0;
+    if (Math.abs(this.sLookY) < 0.002) this.sLookY = 0;
+    // FIX: +heading = screen-left, so cursor-right (+sX) must yaw negative
+    // to look screen-right. invert flags let players flip to taste.
+    // Steering lean needs no inversion: steer LEFT = +1 = +heading.
+    const dirX = this.invertLookX ? 1 : -1;
+    const dirY = this.invertLookY ? -1 : 1;
+    const sX = this.sLookX * this.lookStrength * dirX;
+    const sY = this.sLookY * this.lookStrength * dirY;
+
+    // steering lean: smooth the (already rate-limited) steer input once more
+    // so the camera glides, then gate by speed — parked/small inputs stay put,
+    // fast full-lock gives the full peek into the corner.
+    const spdLean = Math.abs(this.speed);
+    let leanF = clamp((spdLean - 5) / 24, 0, 1);
+    leanF = leanF * leanF * (3 - 2 * leanF); // smoothstep ramp
+    const leanTarget = this.leanOn ? this.steer : 0;
+    this.camLean = damp(this.camLean, leanTarget, 5, dt);
+    if (Math.abs(this.camLean) < 0.003) this.camLean = 0;
+    const leanAmt = this.camLean * leanF * this.leanStrength;
+
     const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
+    // screen-right unit vector (for the lateral depth shift)
+    const rtx = -fz, rtz = fx;
     if (this.camMode === 2) {
-      // hood
+      // hood: camera stays on the bonnet, cursor + steering rotate the gaze
+      // (mouse ~±66°, steer adds a small look-into-the-apex)
       const px = this.pos.x + fx * 0.35, pz = this.pos.z + fz * 0.35;
       const py = this.y + 1.32;
       this.camPos.set(px, py, pz);
       cam.position.copy(this.camPos);
-      const lx = this.pos.x + fx * 40, lz = this.pos.z + fz * 40;
-      this.camLook.set(lx, this.y + 1.0, lz);
+      const yawOff = sX * 1.15 + leanAmt * 0.18;
+      const lyaw = this.heading + yawOff;
+      const lfx = Math.sin(lyaw), lfz = Math.cos(lyaw);
+      const lx = this.pos.x + lfx * 40, lz = this.pos.z + lfz * 40;
+      this.camLook.set(lx, this.y + 1.0 - sY * 7.0, lz);
       cam.lookAt(this.camLook);
     } else {
-      // glued chase: ~1 m gap behind the bumper, identical at any speed
+      // glued chase + cursor orbit + steer lean: camera swings ~55% of the
+      // gaze yaw for an over-the-shoulder peek, while the look point swings
+      // fully. Mouse right → look right; steer left → peek left.
       const dist = this.camMode === 0 ? 3.3 : 3.0;
       // high enough to read the roof + the road ahead in one frame
       const h = this.camMode === 0 ? 2.6 : 2.2;
-      const px = this.pos.x - fx * dist, pz = this.pos.z - fz * dist;
-      let py = this.y + h;
+      const lookYawMax = this.camMode === 0 ? 1.05 : 0.9;
+      const leanYawMax = this.camMode === 0 ? 0.14 : 0.12; // ~8°/7° at full lock
+      const yawOffLook = sX * lookYawMax;
+      const yawOffLean = leanAmt * leanYawMax;
+      const yawOff = yawOffLook + yawOffLean;
+      const posYaw = this.heading + yawOff * 0.55;
+      const lookYaw = this.heading + yawOff;
+      const pfx = Math.sin(posYaw), pfz = Math.cos(posYaw);
+      const lfx = Math.sin(lookYaw), lfz = Math.cos(lookYaw);
+      // lateral depth shift: slide the camera outward (opposite the turn)
+      // while the gaze turns inward — steer left → cam right, look left.
+      const latShift = leanAmt * 0.25;
+      const px = this.pos.x - pfx * dist + rtx * latShift;
+      const pz = this.pos.z - pfz * dist + rtz * latShift;
+      let py = this.y + h + sY * 0.85;
       py = Math.max(py, getHeight(px, pz) + 1.15);
       const shake = this.crashed * 0.25 + (offroad ? Math.min(0.12, Math.abs(this.speed) * 0.006) : 0);
       const jx = shake ? Math.sin(elapsed * 61) * shake : 0;
@@ -500,7 +734,7 @@ export class CarController {
       }
       cam.position.copy(this.camPos);
       const lookIdeal = new THREE.Vector3(
-        this.pos.x + fx * 7.5, this.y + 0.9, this.pos.z + fz * 7.5
+        this.pos.x + lfx * 7.5, this.y + 0.9 - sY * 3.2, this.pos.z + lfz * 7.5
       );
       const kl = 1 - Math.exp(-(8 + Math.abs(this.speed) * 0.2) * dt);
       this.camLook.lerp(lookIdeal, this.camInit ? kl : 1);

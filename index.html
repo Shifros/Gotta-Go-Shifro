@@ -37,7 +37,7 @@
       <p class="load-sub">Sunset Valley Drive — ultra detailed</p>
       <div class="load-bar-wrap"><div id="load-bar"></div></div>
       <div id="load-text">Shaping valley…</div>
-      <div class="load-hint">W A S D / Arrows to drive &nbsp;•&nbsp; SHIFT boost &nbsp;•&nbsp; SPACE handbrake &nbsp;•&nbsp; C camera &nbsp;•&nbsp; G autosteer</div>
+      <div class="load-hint">W A S D drive &nbsp;•&nbsp; Click view for hidden-cursor look (ESC exits) &nbsp;•&nbsp; F fullscreen &nbsp;•&nbsp; C camera &nbsp;•&nbsp; G autosteer</div>
     </div>
   </div>
 
@@ -80,6 +80,8 @@
         <span id="demo-tag">WEB DEMO</span>
         <button id="btn-mute" class="icon-btn" title="Sound">♪</button>
         <button id="btn-cam" class="icon-btn" title="Camera (C)">◉</button>
+        <button id="btn-look" class="icon-btn" title="Free look — hide cursor (click canvas, ESC exits)">👁</button>
+        <button id="btn-full" class="icon-btn" title="Fullscreen (F, ESC exits)">⛶</button>
         <button id="btn-quality" class="icon-btn" title="Quality">✦</button>
         <button id="btn-help" class="icon-btn" title="Help">?</button>
       </div>
@@ -100,6 +102,14 @@
         <div class="row"><button data-q="low" class="chip">Efficient</button><button data-q="high" class="chip active">Ultra</button><button data-q="auto" class="chip">Auto</button></div>
         <label>Exposure <input id="opt-exposure" type="range" min="0.6" max="1.6" step="0.01" value="1.0" /></label>
         <label>Headlights <input id="opt-lights" type="checkbox" /></label>
+        <label>Cursor look (V) <input id="opt-look" type="checkbox" checked /></label>
+        <label>Look strength <input id="opt-look-strength" type="range" min="0" max="1.5" step="0.05" value="1.0" /></label>
+        <label>Auto-center while driving <input id="opt-look-return" type="checkbox" checked /></label>
+        <label>Idle before return (s) <input id="opt-look-idle" type="range" min="0.5" max="10" step="0.5" value="3" /></label>
+        <div class="row"><button id="btn-look-lock" class="chip">Hide cursor — free look</button><button id="btn-full2" class="chip">Fullscreen (F)</button></div>
+        <div class="row"><button id="opt-invert-x" class="chip">Invert X: off</button><button id="opt-invert-y" class="chip">Invert Y: off</button></div>
+        <label>Steer lean <input id="opt-lean" type="checkbox" checked /></label>
+        <label>Lean strength <input id="opt-lean-strength" type="range" min="0" max="2" step="0.05" value="1.0" /></label>
       </div>
       <div id="panel-vehicle" class="panel-page">
         <h3>VEHICLE — AURA GT</h3>
@@ -136,6 +146,9 @@
 
     <div id="errbar" class="hidden"></div>
 
+    <div id="look-hint" class="hidden">CLICK TO LOOK — ESC EXITS</div>
+    <div id="crosshair" class="hidden">+</div>
+
     <div id="touch">
       <div class="t-left"><button id="t-left">◀</button><button id="t-right">▶</button></div>
       <div class="t-right"><button id="t-gas">▲</button><button id="t-brake">▼</button></div>
@@ -149,7 +162,9 @@
         <li><b>W / ↑</b> throttle &nbsp; <b>S / ↓</b> brake / reverse &nbsp; <b>SHIFT</b> boost to 240</li>
         <li><b>A D / ← →</b> steer &nbsp; <b>SPACE</b> handbrake</li>
         <li><b>G</b> autosteer (cruise the loop) &nbsp; <b>C</b> camera</li>
-        <li><b>R</b> reset to road &nbsp; <b>H</b> headlights &nbsp; <b>M</b> sound</li>
+        <li><b>R</b> reset to road &nbsp; <b>H</b> headlights &nbsp; <b>M</b> sound &nbsp; <b>V</b> cursor look</li>
+        <li><b>Click view</b> hides cursor for free look &nbsp;•&nbsp; <b>ESC</b> exits look / fullscreen &nbsp;•&nbsp; <b>F</b> fullscreen</li>
+        <li><b>Mouse</b> look around — auto-centers after a few idle secs while driving</li>
         <li>Free roam: leave the road — grass, hills and forests are all drivable.</li>
       </ul>
       <button id="help-close">DRIVE ▸</button>
