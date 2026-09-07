@@ -182,3 +182,19 @@ input[type=range]{cursor:pointer}
 .help-card h2{margin:0 0 12px;letter-spacing:.2em;font-weight:400;font-size:16px}
 .help-card ul{margin:0 0 18px;padding-left:18px;font-size:13px;line-height:2;color:#cfcfd6}
 #help-close{background:#f4f1ec;border:none;border-radius:99px;padding:10px 22px;font:inherit;cursor:pointer;letter-spacing:.2em}
+
+/* ---- hidden-cursor free look + fullscreen ---- */
+#scene.locked{cursor:none}
+body.look-locked #hud{cursor:none}
+#look-hint{position:fixed;left:50%;bottom:76px;transform:translateX(-50%);z-index:11;
+  pointer-events:none;background:rgba(10,12,16,.55);border:1px solid var(--line);
+  padding:8px 16px;border-radius:99px;font-size:11px;letter-spacing:.24em;
+  backdrop-filter:blur(10px);transition:opacity .3s}
+#look-hint.hidden{display:none}
+body.look-locked #look-hint{display:none}
+#crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:11;
+  pointer-events:none;font-size:18px;color:rgba(255,255,255,.75);
+  text-shadow:0 0 12px rgba(0,0,0,.8);font-weight:300}
+#crosshair.hidden{display:none}
+body:not(.look-locked) #crosshair{display:none}
+#btn-look.active,#btn-full.active{background:linear-gradient(180deg,#ffb03c,#ff7a2e);color:#1a1006;border-color:transparent}

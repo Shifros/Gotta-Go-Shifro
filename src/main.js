@@ -318,6 +318,129 @@ function wireUI() {
     const m = ['CHASE', 'SPORT', 'HOOD'][car.cycleCamera()];
     toast('CAMERA — ' + m);
   });
+  // cursor free-look: V key, STYLE checkbox + strength slider
+  const optLook = document.getElementById('opt-look');
+  const optLookStrength = document.getElementById('opt-look-strength');
+  const optLookReturn = document.getElementById('opt-look-return');
+  const optLookIdle = document.getElementById('opt-look-idle');
+  const optInvX = document.getElementById('opt-invert-x');
+  const optInvY = document.getElementById('opt-invert-y');
+  const btnLook = document.getElementById('btn-look');
+  const btnLookLock = document.getElementById('btn-look-lock');
+  const lookHint = document.getElementById('look-hint');
+  const crosshair = document.getElementById('crosshair');
+  if (optLook) {
+    optLook.checked = car.lookOn;
+    optLook.addEventListener('change', (e) => {
+      car.setLookEnabled(e.target.checked);
+      toast(e.target.checked ? 'LOOK — CURSOR ON' : 'LOOK — CURSOR OFF');
+    });
+  }
+  if (optLookStrength) {
+    optLookStrength.value = car.lookStrength;
+    optLookStrength.addEventListener('input', (e) => car.setLookStrength(parseFloat(e.target.value)));
+  }
+  if (optLookReturn) {
+    optLookReturn.checked = car.lookAutoReturn;
+    optLookReturn.addEventListener('change', (e) => {
+      car.setLookAutoReturn(e.target.checked);
+      toast(e.target.checked ? 'LOOK — AUTO-CENTER ON' : 'LOOK — AUTO-CENTER OFF');
+    });
+  }
+  if (optLookIdle) {
+    optLookIdle.value = car.lookIdleTimeout;
+    optLookIdle.addEventListener('input', (e) => car.setLookIdleTimeout(parseFloat(e.target.value)));
+  }
+  const syncInvert = () => {
+    if (optInvX) optInvX.textContent = `Invert X: ${car.invertLookX ? 'on' : 'off'}`;
+    if (optInvY) optInvY.textContent = `Invert Y: ${car.invertLookY ? 'on' : 'off'}`;
+    optInvX?.classList.toggle('active', car.invertLookX);
+    optInvY?.classList.toggle('active', car.invertLookY);
+  };
+  optInvX?.addEventListener('click', () => { car.setInvertLookX(!car.invertLookX); syncInvert(); });
+  optInvY?.addEventListener('click', () => { car.setInvertLookY(!car.invertLookY); syncInvert(); });
+  syncInvert();
+  // steering lean: camera peeks into the turn at speed
+  const optLean = document.getElementById('opt-lean');
+  const optLeanStrength = document.getElementById('opt-lean-strength');
+  if (optLean) {
+    optLean.checked = car.leanOn;
+    optLean.addEventListener('change', (e) => {
+      car.setLeanEnabled(e.target.checked);
+      toast(e.target.checked ? 'LEAN — STEER CAM ON' : 'LEAN — STEER CAM OFF');
+    });
+  }
+  if (optLeanStrength) {
+    optLeanStrength.value = car.leanStrength;
+    optLeanStrength.addEventListener('input', (e) => car.setLeanStrength(parseFloat(e.target.value)));
+  }
+  car.onLookToggle = (on) => {
+    if (optLook) optLook.checked = on;
+    lookHint?.classList.toggle('hidden', car.locked || !on);
+    toast(on ? 'LOOK — CURSOR ON' : 'LOOK — CURSOR OFF');
+  };
+  // hidden-cursor free look state → buttons / hint / crosshair
+  const syncLock = (locked) => {
+    btnLook?.classList.toggle('active', locked);
+    if (btnLookLock) btnLookLock.textContent = locked ? 'Exit free look (ESC)' : 'Hide cursor — free look';
+    lookHint?.classList.toggle('hidden', locked || !car.lookOn);
+    crosshair?.classList.toggle('hidden', !locked);
+    if (locked) toast('FREE LOOK — ESC EXITS', 1800);
+  };
+  car.onLockChange = syncLock;
+  syncLock(false);
+  // show the click-to-look hint once driving starts
+  setTimeout(() => { if (!car.locked && car.lookOn) lookHint?.classList.remove('hidden'); }, 2500);
+  setTimeout(() => lookHint?.classList.add('hidden'), 12000);
+  const enterLook = () => {
+    if (!car.lookOn) { car.setLookEnabled(true); }
+    if (!car.requestLookLock()) toast('CLICK THE 3D VIEW FOR FREE LOOK');
+  };
+  btnLook?.addEventListener('click', () => {
+    if (car.locked) car.exitLookLock(); else enterLook();
+  });
+  btnLookLock?.addEventListener('click', () => {
+    if (car.locked) car.exitLookLock(); else enterLook();
+  });
+
+  // fullscreen: F key + buttons, ESC exits (browser default + handler below)
+  const btnFull = document.getElementById('btn-full');
+  const btnFull2 = document.getElementById('btn-full2');
+  const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const syncFull = () => {
+    const f = isFull();
+    btnFull?.classList.toggle('active', f);
+    if (btnFull2) btnFull2.textContent = f ? 'Exit fullscreen (ESC)' : 'Fullscreen (F)';
+  };
+  const enterFull = async () => {
+    try {
+      const el = document.documentElement;
+      if (el.requestFullscreen) await el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    } catch { /* user gesture required */ }
+  };
+  const exitFull = async () => {
+    try {
+      if (document.exitFullscreen && document.fullscreenElement) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } catch { /* ignore */ }
+  };
+  const toggleFull = () => (isFull() ? exitFull() : enterFull());
+  btnFull?.addEventListener('click', toggleFull);
+  btnFull2?.addEventListener('click', toggleFull);
+  document.addEventListener('fullscreenchange', () => { syncFull(); onResize(); });
+  document.addEventListener('webkitfullscreenchange', () => { syncFull(); onResize(); });
+  syncFull();
+  addEventListener('keydown', (e) => {
+    if (e.code === 'KeyF' && !e.repeat) toggleFull();
+    // ESC exits look-lock (pointer-lock ESC is handled by the browser,
+    // this covers the non-locked hover offset + fullscreen fallback)
+    if (e.code === 'Escape') {
+      if (car.locked) car.exitLookLock();
+      else if (isFull()) exitFull();
+      else if (car.lookOn && (car.lookX !== 0 || car.lookY !== 0)) car.recenterLook();
+    }
+  });
   document.getElementById('btn-quality').addEventListener('click', () => {
     applyQuality(quality === 'high' ? 'low' : 'high');
     toast('QUALITY — ' + qualityLabel);
